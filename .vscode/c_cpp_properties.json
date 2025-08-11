@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "Linux",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "/home/eduardofortes/MQTTlibs/paho.mqtt.c/src/", 
+                "/home/eduardofortes/MQTTlibs/paho.mqtt.cpp/src/"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/g++",
+            "compileCommands": "${workspaceFolder}/compile_commands.json",
+            "cStandard": "c17",
+            "cppStandard": "c++98",
+            "intelliSenseMode": "linux-gcc-x64"
+        }
+    ],
+    "version": 4
+}

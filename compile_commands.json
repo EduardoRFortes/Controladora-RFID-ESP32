@@ -1,0 +1,8 @@
+[
+
+    {
+        "command": "g++ -L/home/eduardofortes/MQTTlibs/paho.mqtt.c/src/ -L/home/eduardofortes/MQTTlibs/paho.mqtt.cpp/src/ -lpaho-mqttpp3 -lpaho-mqtt3as -lpaho-mqtt3c -lssl -lcrypto -lpthread"
+
+    }
+
+]
