@@ -43,14 +43,20 @@ A aplicação utiliza um design multi-thread para separar as responsabilidades e
 3. Componentes Principais e Suas Funções
 
 O código é dividido em vários componentes lógicos:
-Componente	Função
-main()	Orquestra a inicialização e o encerramento da aplicação. Cria e gerencia o ciclo de vida dos outros componentes.
-callback (classe)	Implementa os handlers de eventos do cliente MQTT. A função message_arrived é a porta de entrada para todas as leituras de RFID no sistema.
-JobQueue (classe)	É o "coração" da arquitetura concorrente. Uma fila segura que atua como um buffer entre a thread rápida do MQTT e a thread lenta de trabalho, permitindo que elas se comuniquem sem conflitos.
-worker_function	A função que executa em uma thread separada para processar os trabalhos da fila. É aqui que a lógica de negócio (chamar a API, salvar no banco) é executada.
-DatabaseHandler (classe)	Abstrai toda a interação com o banco de dados SQLite. É responsável por abrir a conexão, criar a tabela (se não existir) e inserir os registros.
-postApiData (função)	Uma função auxiliar que lida com a complexidade de fazer uma requisição HTTP POST com um corpo JSON, usando a biblioteca libcurl.
-Constantes Globais	No topo do arquivo, são definidas todas as configurações estáticas da aplicação, como endereços de servidores, chave de API, tópicos MQTT e caminhos de certificados.
+
+main():	Orquestra a inicialização e o encerramento da aplicação. Cria e gerencia o ciclo de vida dos outros componentes.
+
+callback (classe):	Implementa os handlers de eventos do cliente MQTT. A função message_arrived é a porta de entrada para todas as leituras de RFID no sistema.
+
+JobQueue (classe):	É o "coração" da arquitetura concorrente. Uma fila segura que atua como um buffer entre a thread rápida do MQTT e a thread lenta de trabalho, permitindo que elas se comuniquem sem conflitos.
+
+worker_function:	A função que executa em uma thread separada para processar os trabalhos da fila. É aqui que a lógica de negócio (chamar a API, salvar no banco) é executada.
+
+DatabaseHandler (classe):	Abstrai toda a interação com o banco de dados SQLite. É responsável por abrir a conexão, criar a tabela (se não existir) e inserir os registros.
+
+postApiData (função):	Uma função auxiliar que lida com a complexidade de fazer uma requisição HTTP POST com um corpo JSON, usando a biblioteca libcurl.
+
+Constantes Globais:	No topo do arquivo, são definidas todas as configurações estáticas da aplicação, como endereços de servidores, chave de API, tópicos MQTT e caminhos de certificados.
 
 4. Fluxo de Dados de uma Leitura
 
