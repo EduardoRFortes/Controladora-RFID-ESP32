@@ -34,7 +34,7 @@ const std::string PATH_TO_CLIENT_KEY = "/etc/mosquitto/certificate/nodes/tarnode
 
 // Chave da API de Patrimônio
 const std::string API_KEY = "b2109VWV.rxo3dB2x9rRRl2sbDGEHw7zdNI8RmFG9";
-const std::string API_URL_BASE = "http://200.18.74.24/api/patrimonio/"; // Porta 8000 removida
+const std::string API_URL_BASE = "http://200.18.74.24/api/patrimonio/";
 
 // ===================== ESTRUTURA PARA O TRABALHO DA WORKER THREAD ======================
 struct ReadingJob {
@@ -69,6 +69,44 @@ std::string getApiData(const std::string& url, const std::string& apiKey) {
         res = curl_easy_perform(curl);
         if(res != CURLE_OK) {
             std::cerr << "curl_easy_perform() falhou: " << curl_easy_strerror(res) << std::endl;
+        }
+
+        curl_easy_cleanup(curl);
+        curl_slist_free_all(headers);
+    }
+    curl_global_cleanup();
+    return readBuffer;
+}
+
+// Coloque esta função perto da getApiData
+std::string postApiData(const std::string& url, const std::string& apiKey, const std::string& postData) {
+    CURL *curl;
+    CURLcode res;
+    std::string readBuffer;
+
+    curl_global_init(CURL_GLOBAL_DEFAULT);
+    curl = curl_easy_init();
+    if(curl) {
+        // Headers para autenticação e tipo de conteúdo
+        struct curl_slist *headers = NULL;
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        std::string authHeader = "Authorization: Api-Key " + apiKey;
+        headers = curl_slist_append(headers, authHeader.c_str());
+
+        curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+
+        // Configurações para o POST
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postData.c_str());
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)postData.length());
+
+        // Callback para a resposta
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &readBuffer);
+
+        res = curl_easy_perform(curl);
+        if(res != CURLE_OK) {
+            std::cerr << "curl_easy_perform() [POST] falhou: " << curl_easy_strerror(res) << std::endl;
         }
 
         curl_easy_cleanup(curl);
@@ -136,14 +174,21 @@ public:
         }
     }
 
+    // DENTRO DA CLASSE DatabaseHandler
     bool createTable(){
         std::string sql = "CREATE TABLE IF NOT EXISTS leituras("
-                          "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
-                          "EPC TEXT NOT NULL,"
-                          "TIMESTAMP TEXT NOT NULL,"
-                          "MQTTID TEXT NOT NULL,"
-                          "DESCRICAO_BEM TEXT,"
-                          "NUMERO_REGISTRO TEXT);";
+                        "ID INTEGER PRIMARY KEY AUTOINCREMENT,"
+                        "EPC TEXT NOT NULL,"
+                        "TIMESTAMP TEXT NOT NULL,"
+                        "MQTTID TEXT NOT NULL,"
+                        "DESCRICAO_BEM TEXT,"
+                        "NUMERO_REGISTRO TEXT,"
+                        // --- NOVAS COLUNAS ---
+                        "LOCAL_DETECCAO TEXT,"
+                        "ALERTA_ENVIADO INTEGER,"  // Usamos INTEGER (0=false, 1=true)
+                        "AUTORIZACAO_ATIVA INTEGER);"; // Usamos INTEGER (0=false, 1=true)
+        
+        // ... o resto da função continua igual ...
         char* errMsg = nullptr;
         int rc = sqlite3_exec(db, sql.c_str(), sqlite_callback, 0, &errMsg);
         if(rc != SQLITE_OK){
@@ -156,9 +201,14 @@ public:
         }
     }
 
+    // DENTRO DA CLASSE DatabaseHandler
     bool insertReading(const std::string& epc, const std::string& timestamp, const std::string& mqttId,
-                       const std::string& descricao, const std::string& numeroRegistro){
-        const char* sql = "INSERT INTO leituras (EPC, TIMESTAMP, MQTTID, DESCRICAO_BEM, NUMERO_REGISTRO) VALUES (?, ?, ?, ?, ?);";
+                    const std::string& descricao, const std::string& numeroRegistro,
+                    // --- NOVOS PARÂMETROS ---
+                    const std::string& localDeteccao, bool alertaEnviado, bool autorizacaoAtiva) {
+        
+        const char* sql = "INSERT INTO leituras (EPC, TIMESTAMP, MQTTID, DESCRICAO_BEM, NUMERO_REGISTRO, "
+                        "LOCAL_DETECCAO, ALERTA_ENVIADO, AUTORIZACAO_ATIVA) VALUES (?, ?, ?, ?, ?, ?, ?, ?);";
         sqlite3_stmt* stmt;
 
         int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, nullptr);
@@ -172,6 +222,11 @@ public:
         sqlite3_bind_text(stmt, 3, mqttId.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 4, descricao.c_str(), -1, SQLITE_STATIC);
         sqlite3_bind_text(stmt, 5, numeroRegistro.c_str(), -1, SQLITE_STATIC);
+        // --- BIND DOS NOVOS VALORES ---
+        sqlite3_bind_text(stmt, 6, localDeteccao.c_str(), -1, SQLITE_STATIC);
+        sqlite3_bind_int(stmt, 7, alertaEnviado ? 1 : 0);
+        sqlite3_bind_int(stmt, 8, autorizacaoAtiva ? 1 : 0);
+
 
         rc = sqlite3_step(stmt);
         if (rc != SQLITE_DONE) {
@@ -181,7 +236,7 @@ public:
         }
 
         sqlite3_finalize(stmt);
-        std::cout << "Registro inserido com sucesso para EPC: " << epc << std::endl;
+        std::cout << "Registro de detecção inserido com sucesso para EPC: " << epc << std::endl;
         return true;
     }
 
@@ -192,8 +247,11 @@ public:
 };
 
 // ===================== FUNÇÃO DA WORKER THREAD ======================
+// Substitua completamente sua worker_function antiga por esta
 void worker_function(JobQueue& queue, DatabaseHandler& dbHandler) {
     std::cout << "Thread trabalhadora iniciada." << std::endl;
+    const std::string url_deteccao = API_URL_BASE + "detectarbem/";
+
     while (true) {
         ReadingJob job;
         if (!queue.pop(job)) {
@@ -201,22 +259,43 @@ void worker_function(JobQueue& queue, DatabaseHandler& dbHandler) {
         }
 
         try {
-            std::cout << "Worker processando EPC: " << job.epc << std::endl;
-            std::string url = API_URL_BASE + "bem/" + job.epc + "/";
-            std::string apiResponse = getApiData(url, API_KEY);
+            std::cout << "Worker processando detecção para EPC: " << job.epc << std::endl;
+            
+            // 1. Montar o corpo JSON para o POST
+            json post_body;
+            post_body["tag_rfid"] = job.epc;
+            post_body["local_deteccao"] = job.mqttId; // Usando mqttId como o local
 
+            // 2. Chamar a API via POST
+            std::string apiResponse = postApiData(url_deteccao, API_KEY, post_body.dump());
+
+            // 3. Processar a resposta da API
             if (!apiResponse.empty() && apiResponse.front() == '{') {
-                json bemData = json::parse(apiResponse);
+                json deteccaoData = json::parse(apiResponse);
+                
+                // Verifica se a resposta contém os dados esperados
+                if (deteccaoData.count("bem_patrimonial") && deteccaoData.count("alerta_enviado")) {
+                    
+                    // Extrai os dados do bem
+                    std::string descricao_bem = deteccaoData["bem_patrimonial"].value("descricao", "N/A");
+                    std::string numero_registro = deteccaoData["bem_patrimonial"].value("numero_registro", "N/A");
 
-                if (bemData.count("descricao") && bemData.count("numero_registro")) {
-                    std::string descricao_bem = bemData.value("descricao", "Não Encontrado");
-                    std::string numero_registro = bemData.value("numero_registro", "N/A");
-                    dbHandler.insertReading(job.epc, std::to_string(job.timestamp), job.mqttId, descricao_bem, numero_registro);
+                    // Extrai os dados da detecção
+                    bool alerta_enviado = deteccaoData.value("alerta_enviado", false);
+                    bool autorizacao_ativa = deteccaoData.value("autorizacao_ativa", false);
+                    
+                    // 4. Inserir o registro completo no banco de dados
+                    dbHandler.insertReading(job.epc, std::to_string(job.timestamp), job.mqttId,
+                                            descricao_bem, numero_registro,
+                                            job.mqttId, alerta_enviado, autorizacao_ativa);
+
                 } else {
-                    std::cerr << "Worker: Resposta da API nao contem campos de bem para EPC: " << job.epc << std::endl;
+                    std::string detail = deteccaoData.value("detail", "");
+                    std::cerr << "Worker: Resposta da API nao contem os campos esperados. Detalhe: " << detail 
+                              << " | Para EPC: " << job.epc << std::endl;
                 }
             } else {
-                 std::cerr << "Worker: Resposta da API nao e um JSON valido para EPC: " << job.epc << std::endl;
+                 std::cerr << "Worker: Resposta da API (POST) nao e um JSON valido para EPC: " << job.epc << std::endl;
             }
         } catch(const std::exception& e) {
             std::cerr << "Worker: Exceção ao processar trabalho: " << e.what() << std::endl;
