@@ -28,9 +28,9 @@ const int QOS = 1;
 const int N_RETRY_ATTEMPTS = 5;
 
 // Caminhos dos certificados TLS
-const std::string PATH_TO_CA_CERT = "/etc/mosquitto/certificate/ca_chain.crt";
-const std::string PATH_TO_CLIENT_CERT = "/etc/mosquitto/certificate/nodes/tarnode1.lan.crt.pem";
-const std::string PATH_TO_CLIENT_KEY = "/etc/mosquitto/certificate/nodes/tarnode1.lan.key";
+const std::string PATH_TO_CA_CERT = "/etc/mosquitto/meus_certificados/ca_chain.crt";
+const std::string PATH_TO_CLIENT_CERT = "/etc/mosquitto/meus_certificados/nodes/tarnode1.2.lan.crt.pem";
+const std::string PATH_TO_CLIENT_KEY = "/etc/mosquitto/meus_certificados/nodes/tarnode1.2.lan.key";
 
 // Chave da API de Patrimônio
 const std::string API_KEY = "b2109VWV.rxo3dB2x9rRRl2sbDGEHw7zdNI8RmFG9";
